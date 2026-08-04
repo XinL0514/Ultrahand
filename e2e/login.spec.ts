@@ -1,5 +1,5 @@
 import { expect } from '@playwright/test';
-import { test } from './fixture';
+import { test } from '@e2e/fixture';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/#/home/profile');
