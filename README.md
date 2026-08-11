@@ -20,12 +20,16 @@ AI 驱动的 Web UI 自动化测试框架,基于 [Midscene.js](https://midscenej
     │   ├── environments.ts      # getEnvironment(): 读取 appBaseURL / classroomApiBaseURL
     │   ├── accounts.ts          # getTestAccount(role?): 读取测试账号密码,支持多个命名角色
     │   └── scenarios.ts         # 业务用例数据,如文生图/图生图的 prompt
-    ├── login.spec.ts            # 登录用例
-    ├── texttopicture.spec.ts / texttopictureBDT.spec.ts     # 文生图用例(两种断言写法,见下文)
-    ├── picturetopicture.spec.ts / picturetopictureBDT.spec.ts  # 图生图用例
-    └── BDT/
-        └── courses.spec.ts, ...  # 对应 BDT 版本用例
+    └── testcase/
+        ├── basic/
+        │   └── login.spec.ts            # 登录用例
+        └── classroom/
+            ├── courses.spec.ts          # 课程列表用例
+            ├── texttopictureBDT.spec.ts    # 文生图用例
+            └── picturetopictureBDT.spec.ts # 文生图 → 引用生成图 → 图生图 的完整用例
 ```
+
+按业务域分目录:`testcase/basic/` 放不依赖教室的通用流程(登录等),`testcase/classroom/` 放需要先进入教室上课的 AI 面板用例。
 
 ## 快速开始
 
@@ -50,10 +54,10 @@ AI 驱动的 Web UI 自动化测试框架,基于 [Midscene.js](https://midscenej
 3. 运行测试:
 
    ```bash
-   npm test                                       # 跑全部用例
-   npm run test:headed                            # 有头模式,方便观察
-   npx playwright test e2e/login.spec.ts          # 只跑单个文件
-   npx playwright test -g "可以文生图"              # 按用例名跑单个用例
+   npm test                                                       # 跑全部用例
+   npm run test:headed                                            # 有头模式,方便观察
+   npx playwright test e2e/testcase/basic/login.spec.ts          # 只跑单个文件
+   npx playwright test -g "可以文生图"                              # 按用例名跑单个用例
    ```
 
    首次运行会先执行 `global-setup.ts`:用 AI 走一遍真实登录流程,并把登录态保存到 `e2e/.auth/user.json`,后续用例直接复用这个登录态,不需要每次都重新登录。如果登录状态异常,删掉这个文件即可强制重新登录。
@@ -68,7 +72,7 @@ AI 驱动的 Web UI 自动化测试框架,基于 [Midscene.js](https://midscenej
 
 ## 写新用例
 
-参考 `e2e/BDT/courses.spec.ts`,通过 `@e2e/*` 别名引入 fixture 和测试数据:
+参考 `e2e/testcase/classroom/courses.spec.ts`,通过 `@e2e/*` 别名引入 fixture 和测试数据。新用例放到 `e2e/testcase/basic/` 或 `e2e/testcase/classroom/` 下(或按业务域新建子目录):
 
 ```ts
 import { expect } from '@playwright/test';
@@ -83,14 +87,11 @@ test('用例名', async ({ page, aiAct, aiQuery, aiAssert, aiWaitFor }) => {
 
 可用方法参考 [Midscene Agent API](https://midscenejs.com/web-api-reference)。
 
-### 普通用例 vs BDT 用例
+### 教室内 AI 面板用例的写法
 
-部分流程同时存在两个版本,例如 `picturetopicture.spec.ts` 与 `BDT/picturetopictureBDT.spec.ts`:
+`testcase/classroom/` 下的用例统一用 Midscene 的 `aiWaitFor` 等待任务完成:先用一段详细的自然语言描述目标状态(比如"对应图片已渲染完成、不再显示排队/生成中/进度百分比"),等待条件满足后再执行措辞类似的 `aiAssert`。新增用例时保持这套写法和现有的自然语言 prompt 措辞风格(这些描述是针对真实页面文案反复调整过的)。
 
-- 普通版本用 Playwright 的 `expect.poll` 等显式轮询对话 iframe 里的 DOM 状态(比如检查文本、检查"中止任务"/进度百分比是否消失)判断任务完成,再执行 `aiAssert`。
-- BDT 版本改用 Midscene 的 `aiWaitFor`,直接用一段详细的自然语言描述完成条件去等待同样的状态,再配合类似措辞的 `aiAssert`。
-
-新增教室内 AI 面板相关用例时,参照最相近的一组现有用例选择写法,并保持自然语言 prompt 的措辞风格(这些描述是针对真实页面文案反复调整过的)。
+其中 `picturetopictureBDT.spec.ts` 是一个连续流程:先执行文生图,等图片生成后点击其下方的引用按钮,再基于这张图做图生图断言;不是两个独立场景,新增类似"基于已有结果继续操作"的用例可以参考它的结构。
 
 ### 教室内用例记得用 endClassGuard
 

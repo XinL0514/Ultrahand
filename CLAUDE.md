@@ -18,7 +18,7 @@ npm test                   # run full suite (playwright test)
 npm run test:headed        # run with a visible browser
 npm run test:report        # open the Playwright HTML report
 
-npx playwright test e2e/login.spec.ts        # run a single file
+npx playwright test e2e/testcase/basic/login.spec.ts   # run a single file
 npx playwright test -g "可以文生图"            # run a single test by name
 ```
 
@@ -42,14 +42,15 @@ After a failure, check the Midscene HTML report first (path printed at the end o
   - `accounts.ts` — `getTestAccount(role?)` → `{ phone, password }`, read from `MIABI_TEST_PHONE`/`MIABI_TEST_PASSWORD`, or `_<ROLE>`-suffixed variants for additional named accounts (e.g. `getTestAccount('login')` reads `MIABI_TEST_PHONE_LOGIN`). Throws if the corresponding env vars are unset.
   - `scenarios.ts` — plain business test-case data (e.g. image-gen prompts), unrelated to environment/account config.
 - Path alias `@e2e/*` → `./e2e/*` (see `tsconfig.json`); specs import fixtures/testdata via `@e2e/...` rather than relative paths.
+- `e2e/testcase/` — specs grouped by business domain:
+  - `basic/` — flows that don't require entering a classroom (e.g. `login.spec.ts`).
+  - `classroom/` — flows that first enter a classroom, then drive the in-classroom AI panel (`courses.spec.ts`, `texttopictureBDT.spec.ts`, `picturetopictureBDT.spec.ts`). New domains should get their own subdirectory here rather than being added flat.
 
-### Spec vs. BDT spec pairs
+### Classroom AI-panel spec pattern
 
-Several flows exist in two versions, e.g. `e2e/picturetopicture.spec.ts` and `e2e/BDT/picturetopictureBDT.spec.ts` (same for texttopicture, courses):
-- The plain `*.spec.ts` version asserts completion using explicit Playwright polling/`expect` against DOM state inside the chat iframe (e.g. polling `innerText`, checking absence of "中止任务"/progress-percentage text) before calling `aiAssert`.
-- The `*BDT.spec.ts` version instead leans on Midscene's `aiWaitFor` with a detailed natural-language completion condition to wait for the same state, then a similarly-worded `aiAssert`.
+Specs under `testcase/classroom/` wait for AI-panel task completion via Midscene's `aiWaitFor`, given a detailed natural-language description of the target state (e.g. "the image has finished rendering, no longer showing queued/generating/progress-percentage"), then run a similarly-worded `aiAssert`. Follow this pattern and mirror the existing phrasing style for new `aiAct`/`aiWaitFor`/`aiAssert` prompts — they're tuned against the real app's copy and behavior.
 
-When adding a new AI-panel flow, follow whichever pattern the closest existing pair uses, and mirror the existing natural-language phrasing style for `aiAct`/`aiWaitFor`/`aiAssert` prompts (they're tuned against the real app's copy and behavior).
+`picturetopictureBDT.spec.ts` chains two AI actions rather than testing them independently: it runs text-to-image first, waits for the image, taps the quote-this-message button beneath it, then runs image-to-image and asserts on that second result. Use it as the reference when adding a "continue from a prior AI result" flow.
 
 ### Known constraints
 
