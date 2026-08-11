@@ -1,12 +1,13 @@
 import { expect } from '@playwright/test';
 import { test } from '@e2e/fixture';
+import { textToImageScenario } from '@e2e/testdata/scenarios';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/#/home/profile');
   test.setTimeout(360_000);
 });
 
-test('可以文生图', async ({ page, aiAct, aiAssert, aiTap, aiInput }) => {
+test('可以文生图', async ({ page, aiAct, aiAssert, aiTap, aiInput, endClassGuard }) => {
   await aiAct('点击带有 开始上课文本的 按钮');
   await aiAct('点击第一个课程分类下的第一个课程封面');
   await aiAct('点击 启动课件, 开始上课 按钮');
@@ -14,20 +15,20 @@ test('可以文生图', async ({ page, aiAct, aiAssert, aiTap, aiInput }) => {
   await aiAct('点击进入教室,等待教室加载完成');
   await aiAct('点击 更多 按钮');
   await aiAct('在AI功能弹窗里点击 文生图 选项');
-  await aiInput('tiger', '聊天输入框', { mode: 'append' });
+  await aiInput(textToImageScenario.prompt, '聊天输入框', { mode: 'append' });
   await aiTap('输入框右侧的纸飞机发送按钮');
 
   const aiFrame = page.frameLocator('iframe').first();
   const aiBody = aiFrame.locator('body');
 
-  // 页面会把“/文生图”和“tiger”拆成不同文本节点，因此检查 iframe 整体文本。
+  // 页面会把"/文生图"和"tiger"拆成不同文本节点，因此检查 iframe 整体文本。
   await expect
     .poll(async () => aiBody.innerText(), {
       timeout: 30_000,
       intervals: [1000],
-      message: '等待本次 /文生图 tiger 请求出现在右侧对话中',
+      message: `等待本次 /文生图 ${textToImageScenario.prompt} 请求出现在右侧对话中`,
     })
-    .toContain('tiger');
+    .toContain(textToImageScenario.prompt);
 
   // 文生图结果会作为紧随命令后的助手消息渲染，而不是嵌在用户命令消息中。
   const generatedImage = aiFrame
@@ -59,7 +60,7 @@ test('可以文生图', async ({ page, aiAct, aiAssert, aiTap, aiInput }) => {
   await expect(aiFrame.getByText(/^\d+%$/)).toHaveCount(0);
 
   await aiAssert(
-    '只检查右侧对话流中刚刚发送的“/文生图 tiger”这条消息对应的最终图片：图片内容必须是一只老虎（tiger），不能检查左侧已有图片；该消息不能仍处于排队、生成中、加载中或显示进度百分比的状态',
+    `只检查右侧对话流中刚刚发送的"/文生图 ${textToImageScenario.prompt}"这条消息对应的最终图片：图片内容必须是一只老虎（${textToImageScenario.prompt}），不能检查左侧已有图片；该消息不能仍处于排队、生成中、加载中或显示进度百分比的状态`,
   );
   await aiAct('点击左上角的 下课 按钮');
 });

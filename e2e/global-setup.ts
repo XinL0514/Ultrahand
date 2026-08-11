@@ -3,19 +3,14 @@ import { dirname } from 'node:path';
 import { chromium } from 'playwright';
 import { PlaywrightAgent } from '@midscene/web/playwright';
 import 'dotenv/config';
+import { getEnvironment } from './testdata/environments';
+import { getTestAccount } from './testdata/accounts';
 
-const APP_URL = 'https://aixmy.miaobi.cn/#/home/profile';
 const STORAGE_STATE_PATH = './e2e/.auth/user.json';
 
 export default async function globalSetup() {
-  const phone = process.env.MIABI_TEST_PHONE;
-  const password = process.env.MIABI_TEST_PASSWORD;
-
-  if (!phone || !password) {
-    throw new Error(
-      'MIABI_TEST_PHONE / MIABI_TEST_PASSWORD is not set. Copy .env.example to .env and fill in a test account.',
-    );
-  }
+  const { phone, password } = getTestAccount();
+  const appUrl = `${getEnvironment().appBaseURL}/#/home/profile`;
 
   const browser = await chromium.launch({
     headless: true,
@@ -24,7 +19,7 @@ export default async function globalSetup() {
   const context = await browser.newContext({ locale: 'zh-CN' });
   const page = await context.newPage();
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto(APP_URL);
+  await page.goto(appUrl);
 
   const agent = new PlaywrightAgent(page);
 
