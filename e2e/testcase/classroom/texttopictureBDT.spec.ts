@@ -1,5 +1,5 @@
 import { test } from '@e2e/fixture';
-import { textToImageScenario } from '@e2e/testdata/scenarios';
+import { textToImageScenario } from '@e2e/testdata/scenarios/classroom';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/#/home/profile');
