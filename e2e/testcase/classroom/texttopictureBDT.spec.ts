@@ -7,12 +7,15 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('可以文生图', { tag: '@smoke' }, async ({ aiAct, aiAssert, aiTap, aiInput, aiWaitFor, endClassGuard }) => {
-  await aiAct('点击带有 开始上课文本的 按钮');
-  await aiAct('点击第一个课程分类下的第一个课程封面');
-  await aiAct('点击 启动课件, 开始上课 按钮');
+  await aiTap('点击带有 开始上课文本的 按钮');
+  await aiAct('等待课件选择页面加载完毕, 然后点击第一个课程分类下的第一个课程封面');
+  await aiTap('点击 启动课件, 开始上课 按钮');
   await aiTap('点击 自动生成房间号 按钮');
-  await aiAct('点击进入教室,等待教室加载完成');
-  await aiAct('点击 更多 按钮');
+  await aiTap('点击 立即进入');
+  await aiWaitFor('教室页面已经加载完成，右侧对话/工具区域已经渲染出来，不再显示空白或加载中的转圈图标,不显示欢迎使用神笔马良, 并且显示出来对话框', {
+    timeoutMs: 15000,
+  });
+  await aiTap('点击 更多');
   await aiAct('在AI功能弹窗里点击 文生图 选项');
   await aiInput(textToImageScenario.prompt, '聊天输入框', { mode: 'append' });
   await aiTap('输入框右侧的纸飞机发送按钮');
