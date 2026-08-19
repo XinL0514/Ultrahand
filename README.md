@@ -13,12 +13,14 @@ AI 驱动的 Web UI 自动化测试框架,基于 [Midscene.js](https://midscenej
 ├── tsconfig.json                # 配置了 @e2e/* 路径别名,指向 ./e2e/*
 ├── .env.example                 # 模型 API key + 测试账号 + 环境地址占位,复制为 .env 后填真实值
 └── e2e/
-    ├── global-setup.ts          # 用 AI 完成一次真实登录,保存 storageState 到 e2e/.auth/user.json
+    ├── global-setup.ts          # 用 AI 完成真实登录(按账号池逐个账号登录),保存 storageState 到 e2e/.auth/user-<slot>.json
     ├── fixture.ts                # 注入 Midscene AI 方法(aiAct/aiQuery/aiAssert/...)到 Playwright test,
+    │                             # 按 worker 分配账号槽位的 storageState fixture,
     │                             # 并提供 endClassGuard 兜底下课的 opt-in fixture
     ├── testdata/
     │   ├── environments.ts      # getEnvironment(): 读取 appBaseURL / classroomApiBaseURL
-    │   ├── accounts.ts          # getTestAccount(role?): 读取测试账号密码,支持多个命名角色
+    │   ├── accounts.ts          # getTestAccount(role?): 读取测试账号密码,支持多个命名角色;
+    │   │                        # getTestAccountPoolSize() / getTestAccountForSlot(slot): 并发账号池
     │   └── scenarios/
     │       └── classroom.ts    # 教室内 AI 面板用例数据,如文生图/图生图/文生音乐的 prompt
     └── testcase/
@@ -51,6 +53,7 @@ AI 驱动的 Web UI 自动化测试框架,基于 [Midscene.js](https://midscenej
    编辑 `.env`:
    - 选择 Gemini 或 GPT-5 其中一组,填入真实的 `MIDSCENE_MODEL_*`(参考 [Midscene 模型配置文档](https://midscenejs.com/model-common-config.md))
    - 填入 `MIABI_TEST_PHONE` / `MIABI_TEST_PASSWORD`,一个可用于测试的账号密码
+   - 如需并发执行(见下文"并发执行"一节),额外填入 `MIABI_TEST_ACCOUNT_POOL_SIZE=N` 及 `MIABI_TEST_PHONE_1`/`_PASSWORD_1` … `_N` 这 N 个账号;不填则默认单账号串行,和现状一致
    - 如需在不同环境运行(默认是 `aixmy.miaobi.cn` / `maliang.miaobi.cn`),可选填 `MIABI_APP_BASE_URL` / `MIABI_CLASSROOM_API_BASE_URL` 覆盖,详见 `e2e/testdata/environments.ts`
 
 3. 运行测试:
@@ -62,7 +65,7 @@ AI 驱动的 Web UI 自动化测试框架,基于 [Midscene.js](https://midscenej
    npx playwright test -g "可以文生图"                              # 按用例名跑单个用例
    ```
 
-   首次运行会先执行 `global-setup.ts`:用 AI 走一遍真实登录流程,并把登录态保存到 `e2e/.auth/user.json`,后续用例直接复用这个登录态,不需要每次都重新登录。如果登录状态异常,删掉这个文件即可强制重新登录。
+   首次运行会先执行 `global-setup.ts`:用 AI 走一遍真实登录流程(账号池里每个账号各登录一次),并把每个账号的登录态分别保存到 `e2e/.auth/user-<slot>.json`,后续用例直接复用对应登录态,不需要每次都重新登录。如果登录状态异常,删掉对应文件(或整个 `e2e/.auth/` 目录)即可强制重新登录。
 
 4. 查看报告:
 
@@ -108,8 +111,31 @@ test('用例名', async ({ page, aiAct, aiQuery, aiAssert, aiWaitFor }) => {
 
 任何进入教室上课的用例,都建议在测试参数里解构 `endClassGuard`(`e2e/fixture.ts` 中的 opt-in fixture)。它会在测试结束后,即使 UI 上点击"下课"失败或用例提前中断,也通过 `classroomApiBaseURL` 接口用捕获到的 `roomKey` 兜底强制下课,避免教室卡在"上课中"状态。
 
+## 并发执行
+
+默认不设置 `MIABI_TEST_ACCOUNT_POOL_SIZE` 时,套件是单账号 / 单 worker 串行执行,和历史行为完全一致。
+
+要启用并发,在 `.env` 里设置账号池:
+
+```bash
+MIABI_TEST_ACCOUNT_POOL_SIZE=3
+MIABI_TEST_PHONE_1=...
+MIABI_TEST_PASSWORD_1=...
+MIABI_TEST_PHONE_2=...
+MIABI_TEST_PASSWORD_2=...
+MIABI_TEST_PHONE_3=...
+MIABI_TEST_PASSWORD_3=...
+```
+
+原理:
+- `playwright.config.ts` 里 `workers` 等于账号池大小(`getTestAccountPoolSize()`),`fullyParallel: true`
+- `e2e/global-setup.ts` 会依次登录池里的每个账号,分别保存 `e2e/.auth/user-0.json`、`user-1.json` … `user-<N-1>.json`
+- `e2e/fixture.ts` 覆盖了 Playwright 内置的 `storageState` fixture,按 `testInfo.parallelIndex` 把每个 worker 固定绑定到一个账号槽位,且这个绑定在 worker 整个生命周期内不变
+
+因为并发 worker 之间账号互不相同,自然就不会共用同一个登录态/教室会话,`testcase/classroom/` 下那些固定"点击第一个课程 + 自动生成房间号"的用例也就不会互相抢课或抢教室,不需要额外给用例加唯一化逻辑。
+
 ## 已知限制
 
 - Midscene 目前不支持 Anthropic/Claude 作为视觉定位模型,本项目使用 Gemini/GPT-5。
 - 登录表单的真实文案/是否有验证码等细节以 `global-setup.ts` 首次真实运行结果为准,如遇登录失败,优先调整其中的自然语言描述,而非底层架构。
-- 测试目前是串行执行(`playwright.config.ts` 中 `fullyParallel: false`, `workers: 1`),因为多个用例共用同一个教室/账号流程,并行跑容易互相冲突。
+- 测试默认单账号 / 串行执行;配置账号池(见上文"并发执行"一节)后可安全并发,每个 worker 各用各的账号,不会互相冲突。

@@ -1,13 +1,13 @@
 import { expect } from '@playwright/test';
 import { test } from '@e2e/fixture';
-import { getTestAccount } from '@e2e/testdata/accounts';
+import { getTestAccountForSlot } from '@e2e/testdata/accounts';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/#/home/profile');
 });
 
-test('可以正常登录', async ({ page, aiAct, aiQuery, aiAssert, aiWaitFor }) => {
-    const { phone, password } = getTestAccount();
+test('可以正常登录', async ({ page, aiAct, aiQuery, aiAssert, aiWaitFor }, testInfo) => {
+    const { phone, password } = getTestAccountForSlot(testInfo.parallelIndex);
     await page.goto('/#/home/profile');
     await aiAct('点击登录按钮');
     await aiAct(`输入工号 ${phone}`);

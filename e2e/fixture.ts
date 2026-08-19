@@ -3,6 +3,7 @@ import type { TestInfo } from '@playwright/test';
 import type { PlayWrightAiFixtureType } from '@midscene/web/playwright';
 import { PlaywrightAiFixture } from '@midscene/web/playwright';
 import { getEnvironment } from './testdata/environments';
+import { getTestAccountPoolSize } from './testdata/accounts';
 
 type EndClassFixtures = {
   endClassGuard: void;
@@ -41,6 +42,15 @@ export const test = base.extend<PlayWrightAiFixtureType & EndClassFixtures>({
     // to avoid an AI round-trip on every step. Auto-invalidates if the UI drifts.
     cache: true,
   }),
+
+  // Pin each worker to a stable account slot for its whole lifetime, so
+  // concurrent workers never share a login/classroom session. parallelIndex
+  // is stable per worker process, and workers count is capped at the account
+  // pool size (see playwright.config.ts), so this never wraps into collision.
+  storageState: async ({}, use, testInfo) => {
+    const slot = testInfo.parallelIndex % getTestAccountPoolSize();
+    await use(`./e2e/.auth/user-${slot}.json`);
+  },
 
   // Safety net: tests end class via a UI click on 下课, which can fail
   // silently (AI mis-click, timeout, test aborting early). This captures the
