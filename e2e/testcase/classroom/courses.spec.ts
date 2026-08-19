@@ -5,7 +5,7 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/#/home/courses');
 });
 
-test('课程列表能正常加载', async ({ aiQuery, aiAssert, aiWaitFor }) => {
+test('课程列表能正常加载', { tag: '@smoke' }, async ({ aiQuery, aiAssert, aiWaitFor }) => {
   await aiWaitFor('课程列表已经加载完成,页面上出现了至少一个课程卡片', {
     timeoutMs: 15000,
   });

@@ -6,7 +6,7 @@ test.beforeEach(async ({ page }) => {
   test.setTimeout(360_000);
 });
 
-test('可以文生音乐', async ({ aiAct, aiAssert, aiTap, aiInput, aiWaitFor, endClassGuard }) => {
+test('可以文生音乐', { tag: '@smoke' }, async ({ aiAct, aiAssert, aiTap, aiInput, aiWaitFor, endClassGuard }) => {
   await aiAct('点击带有 开始上课文本的 按钮');
   await aiAct('点击第一个课程分类下的第一个课程封面');
   await aiAct('点击 启动课件, 开始上课 按钮');

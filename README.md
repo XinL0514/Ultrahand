@@ -60,6 +60,7 @@ AI 驱动的 Web UI 自动化测试框架,基于 [Midscene.js](https://midscenej
 
    ```bash
    npm test                                                       # 跑全部用例
+   npm run test:smoke                                             # 只跑标了 @smoke 的冒烟用例
    npm run test:headed                                            # 有头模式,方便观察
    npx playwright test e2e/testcase/basic/login.spec.ts          # 只跑单个文件
    npx playwright test -g "可以文生图"                              # 按用例名跑单个用例
@@ -100,6 +101,18 @@ test('用例名', async ({ page, aiAct, aiQuery, aiAssert, aiWaitFor }) => {
 ```
 
 可用方法参考 [Midscene Agent API](https://midscenejs.com/web-api-reference)。
+
+### 标记冒烟用例
+
+给用例加第二个参数 `{ tag: '@smoke' }` 即可标记为冒烟用例,`npm run test:smoke`(即 `playwright test --grep @smoke`)只会跑带这个标签的用例:
+
+```ts
+test('用例名', { tag: '@smoke' }, async ({ page, aiAct, aiAssert }) => {
+  ...
+});
+```
+
+当前冒烟集:`basic/login.spec.ts`(登录)、`classroom/courses.spec.ts`(课程列表)、`classroom/texttopictureBDT.spec.ts`(文生图)。
 
 ### 教室内 AI 面板用例的写法
 
