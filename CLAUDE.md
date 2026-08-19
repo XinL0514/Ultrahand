@@ -35,16 +35,16 @@ After a failure, check the Midscene HTML report first (path printed at the end o
 - `playwright.config.ts` — single `chromium` project, `fullyParallel: false` / `workers: 1` (tests are not safe to run concurrently — they share one classroom/account flow), `baseURL` comes from `getEnvironment().appBaseURL`, `locale: 'zh-CN'`.
 - `e2e/global-setup.ts` — logs in once via a `PlaywrightAgent` (Midscene) driving natural-language steps, persists `storageState`.
 - `e2e/fixture.ts` — extends Playwright's `test` with:
-  - Midscene's `PlaywrightAiFixture` (`aiAct`, `aiQuery`, `aiAssert`, `aiTap`, `aiInput`, `aiWaitFor`, `recordToReport`, ...), with `cache: true` to reuse element locations/plans across unchanged pages.
+  - Midscene's `PlaywrightAiFixture` (`aiAct`, `aiQuery`, `aiAssert`, `aiTap`, `aiInput`, `aiWaitFor`, `recordToReport`, ...), with `cache: true` to reuse element locations/plans across unchanged pages and skip redundant AI round-trips. Cache files are written per spec-file+test-name under `midscene_run/cache/testcase/**/*.cache.yaml` (gitignored, regenerated locally per machine); Midscene auto-invalidates a cached entry when the page has drifted, but if a test starts failing for no obvious reason after a UI change, deleting the relevant `.cache.yaml` (or all of `midscene_run/cache/`) to force fresh AI inference is a reasonable first debugging step.
   - `endClassGuard` — an opt-in fixture (`{ auto: false }`, must be destructured explicitly in a test) that sniffs the `roomKey` off outgoing requests and, after the test body finishes, force-ends the classroom session via the `classroomApiBaseURL` API using the auth token from `localStorage`. This is a safety net for when the UI-driven "下课" (end class) click fails silently, so a flaky test doesn't leave a classroom stuck in "in session". Any spec that enters a classroom should destructure and use `endClassGuard`.
 - `e2e/testdata/` — fixture/config data, read from environment variables with defaults, not hardcoded per-test:
   - `environments.ts` — `getEnvironment()` → `{ appBaseURL, classroomApiBaseURL }`, overridable via `MIABI_APP_BASE_URL` / `MIABI_CLASSROOM_API_BASE_URL`.
   - `accounts.ts` — `getTestAccount(role?)` → `{ phone, password }`, read from `MIABI_TEST_PHONE`/`MIABI_TEST_PASSWORD`, or `_<ROLE>`-suffixed variants for additional named accounts (e.g. `getTestAccount('login')` reads `MIABI_TEST_PHONE_LOGIN`). Throws if the corresponding env vars are unset.
-  - `scenarios.ts` — plain business test-case data (e.g. image-gen prompts), unrelated to environment/account config.
+  - `scenarios/classroom.ts` — plain business test-case data for classroom AI-panel flows (e.g. text-to-image, image-to-image, text-to-music prompts), unrelated to environment/account config.
 - Path alias `@e2e/*` → `./e2e/*` (see `tsconfig.json`); specs import fixtures/testdata via `@e2e/...` rather than relative paths.
 - `e2e/testcase/` — specs grouped by business domain:
   - `basic/` — flows that don't require entering a classroom (e.g. `login.spec.ts`).
-  - `classroom/` — flows that first enter a classroom, then drive the in-classroom AI panel (`courses.spec.ts`, `texttopictureBDT.spec.ts`, `picturetopictureBDT.spec.ts`). New domains should get their own subdirectory here rather than being added flat.
+  - `classroom/` — flows that first enter a classroom, then drive the in-classroom AI panel (`courses.spec.ts`, `texttopictureBDT.spec.ts`, `picturetopictureBDT.spec.ts`, `texttomusicBDT.spec.ts`). New domains should get their own subdirectory here rather than being added flat.
 
 ### Classroom AI-panel spec pattern
 

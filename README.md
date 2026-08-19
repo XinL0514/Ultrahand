@@ -4,7 +4,7 @@ AI 驱动的 Web UI 自动化测试框架,基于 [Midscene.js](https://midscenej
 
 用自然语言描述操作(`aiAct`)、查询(`aiQuery`)和断言(`aiAssert`),Midscene 用视觉模型直接理解截图完成元素定位,不依赖 CSS/XPath 选择器,减少 UI 改版带来的用例维护成本。
 
-被测应用是神笔马良(`aixmy.miaobi.cn`),用例主要覆盖登录、课程列表,以及教室内 AI 面板的文生图 / 图生图流程。
+被测应用是神笔马良(`aixmy.miaobi.cn`),用例主要覆盖登录、课程列表,以及教室内 AI 面板的文生图 / 图生图 / 文生音乐流程。
 
 ## 目录结构
 
@@ -19,14 +19,16 @@ AI 驱动的 Web UI 自动化测试框架,基于 [Midscene.js](https://midscenej
     ├── testdata/
     │   ├── environments.ts      # getEnvironment(): 读取 appBaseURL / classroomApiBaseURL
     │   ├── accounts.ts          # getTestAccount(role?): 读取测试账号密码,支持多个命名角色
-    │   └── scenarios.ts         # 业务用例数据,如文生图/图生图的 prompt
+    │   └── scenarios/
+    │       └── classroom.ts    # 教室内 AI 面板用例数据,如文生图/图生图/文生音乐的 prompt
     └── testcase/
         ├── basic/
         │   └── login.spec.ts            # 登录用例
         └── classroom/
             ├── courses.spec.ts          # 课程列表用例
             ├── texttopictureBDT.spec.ts    # 文生图用例
-            └── picturetopictureBDT.spec.ts # 文生图 → 引用生成图 → 图生图 的完整用例
+            ├── picturetopictureBDT.spec.ts # 文生图 → 引用生成图 → 图生图 的完整用例
+            └── texttomusicBDT.spec.ts      # 文生音乐用例
 ```
 
 按业务域分目录:`testcase/basic/` 放不依赖教室的通用流程(登录等),`testcase/classroom/` 放需要先进入教室上课的 AI 面板用例。
@@ -69,6 +71,15 @@ AI 驱动的 Web UI 自动化测试框架,基于 [Midscene.js](https://midscenej
    ```
 
    Midscene 会额外生成一份 HTML 报告(运行结束时终端会打印路径,默认在 `midscene_run/report/`),里面能看到每一步的截图和 AI 的决策过程,调试用例失败时优先看这个,比 Playwright 自带的 trace 更直观。
+
+## 缓存
+
+`e2e/fixture.ts` 里给 `PlaywrightAiFixture` 开启了 `cache: true`:当页面没有变化时,Midscene 会复用上一次运行时缓存的元素定位 / `aiAct` 执行计划,而不是每一步都重新走一次 AI 推理,这样能显著加快用例执行速度、减少模型调用开销。
+
+- 缓存文件按"用例文件 + 用例名"生成,存在 `midscene_run/cache/testcase/**/*.cache.yaml`,例如 `midscene_run/cache/testcase/classroom/texttopictureBDT.spec.ts(可以文生图).cache.yaml`。
+- 整个 `midscene_run/` 目录都在 `.gitignore` 里,缓存文件不会被提交,每个人本地各自生成。
+- 如果页面结构变化导致缓存的定位/计划失效,Midscene 会自动探测并回退到重新推理,一般不需要手动干预。
+- 如果怀疑是缓存导致的定位错误(比如页面改版后用例开始莫名失败),可以删掉对应的 `.cache.yaml` 文件(或整个 `midscene_run/cache/` 目录)强制下次重新生成。
 
 ## 写新用例
 
