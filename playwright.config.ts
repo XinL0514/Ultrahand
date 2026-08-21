@@ -17,7 +17,7 @@ export default defineConfig({
     ['html', { open: 'never' }],
     ['@midscene/web/playwright-reporter', { type: 'merged' }],
   ],
-  globalSetup: './e2e/global-setup.ts',
+  globalSetup: './e2e/globalSetup.ts',
   use: {
     baseURL: getEnvironment().appBaseURL,
     trace: 'retain-on-failure',
