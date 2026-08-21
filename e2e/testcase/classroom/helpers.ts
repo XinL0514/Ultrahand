@@ -4,16 +4,16 @@ type ClassroomFixtures = Pick<PlayWrightAiFixtureType, 'aiTap' | 'aiWaitFor' | '
 
 /**
  * 点击"开始上课"、选第一个课件、自动生成房间号并进入教室，等到教室页面渲染完成。
- * 三个 classroom/*BDT.spec.ts 用例开头都是这一整段，抽出来避免话术漂移。
+ * classroom/*BDT.spec.ts 用例开头都是这一整段，抽出来避免话术漂移。
  */
 export async function enterFirstClassroom({ aiTap, aiWaitFor }: ClassroomFixtures) {
   await aiTap('点击带有 开始上课文本的 按钮');
-  // 缓存过一次错误坐标就会一直复用而不重新走视觉定位（曾误点到分类标签而非封面），
-  // 这一步只在进课时跑一次，禁用缓存换取每次都重新定位的正确性。
   await aiWaitFor(
     '课件选择页面已经加载完成，课件分类以及课件封面已经渲染出来，不再显示空白或加载中的转圈图标',
     { timeoutMs: 15000 },
   );
+  // 缓存过一次错误坐标就会一直复用而不重新走视觉定位（曾误点到分类标签而非封面），
+  // 这一步只在进课时跑一次，禁用缓存换取每次都重新定位的正确性。
   await aiTap('点击第一个课程分类下的第一个课程封面', { cacheable: false });
   await aiWaitFor('课件预览面板已经渲染完成，显示出 启动课件, 开始上课 按钮，不再只是课件选择弹窗', {
     timeoutMs: 15000,

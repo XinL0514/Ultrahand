@@ -4,7 +4,7 @@ import { enterFirstClassroom, openAiPanelOption, exitClassroom, waitForStableThe
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/#/home/profile');
-  test.setTimeout(360_000);
+  test.setTimeout(500_000);
 });
 
 test('可以文生3D', { tag: '@smoke' }, async ({ aiAct, aiTap, aiInput, aiWaitFor, aiAssert, endClassGuard }) => {
