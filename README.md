@@ -120,6 +120,32 @@ test('用例名', { tag: '@smoke' }, async ({ page, aiAct, aiAssert }) => {
 
 其中 `pictureToPictureBDT.spec.ts` 是一个连续流程:先执行文生图,等图片生成后点击其下方的引用按钮,再基于这张图做图生图断言;不是两个独立场景,新增类似"基于已有结果继续操作"的用例可以参考它的结构。
 
+### 用配置描述生成工作流
+
+课堂内的生成用例应优先使用 `runClassroomGenerationFlow`。它统一完成进入教室、打开 AI 功能、发送消息、稳定等待/断言，以及无论成功或失败都尝试 UI 下课；测试仍需解构 `endClassGuard`，以保留接口级的下课兜底。
+
+每个步骤只描述业务差异:功能名称、prompt、完成条件；`quotePreviousImage: true` 表示先引用上一轮生成的图片。默认生成等待预算为 180 秒、轮询间隔为 3 秒，较慢的能力可按步骤覆盖:
+
+```ts
+await runClassroomGenerationFlow(
+  { aiAct, aiTap, aiInput, aiWaitFor, aiAssert },
+  [
+    {
+      optionLabel: '文生图',
+      prompt: '老虎',
+      completionText: '右侧对话流中刚刚发送的文生图消息已经完成，图片清晰可见且不显示生成进度',
+    },
+    {
+      quotePreviousImage: true,
+      optionLabel: '图生图',
+      prompt: '黑色的老虎',
+      completionText: '右侧对话流中最新的图生图消息已经完成，结果图片清晰可见且不显示生成进度',
+      timeoutMs: 240_000,
+    },
+  ],
+);
+```
+
 ### 教室内用例记得用 endClassGuard
 
 任何进入教室上课的用例,都建议在测试参数里解构 `endClassGuard`(`e2e/fixture.ts` 中的 opt-in fixture)。它会在测试结束后,即使 UI 上点击"下课"失败或用例提前中断,也通过 `classroomApiBaseURL` 接口用捕获到的 `roomKey` 兜底强制下课,避免教室卡在"上课中"状态。

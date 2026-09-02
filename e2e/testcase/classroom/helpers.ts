@@ -1,6 +1,28 @@
 import type { PlayWrightAiFixtureType } from '@midscene/web/playwright';
 
 type ClassroomFixtures = Pick<PlayWrightAiFixtureType, 'aiTap' | 'aiWaitFor' | 'aiAct'>;
+type ClassroomGenerationFixtures = Pick<
+  PlayWrightAiFixtureType,
+  'aiAct' | 'aiTap' | 'aiInput' | 'aiWaitFor' | 'aiAssert'
+>;
+
+const DEFAULT_GENERATION_TIMEOUT_MS = 180_000;
+const DEFAULT_GENERATION_CHECK_INTERVAL_MS = 3_000;
+
+/** One business generation step in a classroom AI-panel workflow. */
+export interface ClassroomGenerationStep {
+  /** The exact label shown in the AI-function menu, e.g. 文生图 or 图生视频. */
+  optionLabel: string;
+  prompt: string;
+  /** Description used to wait for the newly sent command's result to settle. */
+  completionText: string;
+  /** Optional business-specific assertion executed after the completion assertion. */
+  assertText?: string;
+  timeoutMs?: number;
+  checkIntervalMs?: number;
+  /** Quote the image produced by the preceding step before selecting this option. */
+  quotePreviousImage?: boolean;
+}
 
 /**
  * 点击"开始上课"、选第一个课件、自动生成房间号并进入教室，等到教室页面渲染完成。
@@ -55,6 +77,69 @@ export async function openAiPanelOption(
 /** 点击左上角"下课"按钮结束教室会话。UI 断言仍然要走这一步，endClassGuard 只是兜底，不是替代。 */
 export async function exitClassroom({ aiTap }: Pick<ClassroomFixtures, 'aiTap'>) {
   await aiTap('点击左上角的 下课 按钮');
+}
+
+/**
+ * Runs a complete in-classroom generation workflow.
+ *
+ * It centralizes the otherwise repeated menu selection, message submission,
+ * stable completion check, per-step timeout defaults, and UI cleanup. Specs
+ * keep their prompts and semantic assertions beside the business case.
+ * `endClassGuard` remains the API-level fallback and must still be opted into
+ * by destructuring it from the test fixture.
+ */
+export async function runClassroomGenerationFlow(
+  fixtures: ClassroomGenerationFixtures,
+  steps: readonly ClassroomGenerationStep[],
+) {
+  if (steps.length === 0) {
+    throw new Error('runClassroomGenerationFlow 至少需要一个生成步骤');
+  }
+
+  const { aiAct, aiTap, aiInput, aiWaitFor, aiAssert } = fixtures;
+  await enterFirstClassroom({ aiAct, aiTap, aiWaitFor });
+
+  let workflowError: unknown;
+  try {
+    for (const step of steps) {
+      if (step.quotePreviousImage) {
+        await aiTap('点击生成图片下方的 一对蓝色双引号 按钮');
+      }
+
+      await openAiPanelOption({ aiAct, aiTap, aiWaitFor }, step.optionLabel);
+      await aiInput(step.prompt, '聊天输入框', { mode: 'append' });
+      await aiTap('输入框右侧的纸飞机发送按钮');
+      await waitForStableThenAssert(
+        { aiWaitFor, aiAssert },
+        step.completionText,
+        step.completionText,
+        {
+          timeoutMs: step.timeoutMs ?? DEFAULT_GENERATION_TIMEOUT_MS,
+          checkIntervalMs: step.checkIntervalMs ?? DEFAULT_GENERATION_CHECK_INTERVAL_MS,
+        },
+      );
+      if (step.assertText && step.assertText !== step.completionText) {
+        await aiAssert(step.assertText);
+      }
+    }
+  } catch (err) {
+    workflowError = err;
+    throw err;
+  } finally {
+    // Keep exercising the UI-level "下课" path even if generation/assertion
+    // fails. The opt-in endClassGuard fixture provides the API fallback.
+    try {
+      await exitClassroom({ aiTap });
+    } catch (cleanupError) {
+      // A failed cleanup must not hide the original generation/assertion error.
+      // endClassGuard will still run after the test and records its API cleanup.
+      if (workflowError) {
+        console.warn('课堂 UI 下课失败，保留原始工作流错误:', cleanupError);
+      } else {
+        throw cleanupError;
+      }
+    }
+  }
 }
 
 type WaitForOptions = Parameters<PlayWrightAiFixtureType['aiWaitFor']>[1];
