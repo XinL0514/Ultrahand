@@ -15,16 +15,16 @@ export function getTestAccount(role = 'default'): TestAccount {
   return { phone, password };
 }
 
-// Number of accounts available for concurrent workers. Defaults to 1 (single
-// account, matches historical serial behavior). Set MIABI_TEST_ACCOUNT_POOL_SIZE
-// to N and provide accounts _1.._N to enable N concurrent workers.
+// 可供并发工作进程使用的账号数量。默认值为 1（单账号，与原有的串行行为一致）。
+// 将 MIABI_TEST_ACCOUNT_POOL_SIZE 设为 N，并提供后缀为 _1 至 _N 的账号，
+// 即可启用 N 个并发工作进程。
 export function getTestAccountPoolSize(): number {
   const raw = process.env.MIABI_TEST_ACCOUNT_POOL_SIZE;
   const size = raw ? parseInt(raw, 10) : 1;
   return Number.isFinite(size) && size > 0 ? size : 1;
 }
 
-// Maps a worker's parallelIndex to a stable account slot in the pool.
+// 将工作进程的 parallelIndex 映射到账号池中稳定的账号槽位。
 export function getTestAccountForSlot(slot: number): TestAccount {
   const poolSize = getTestAccountPoolSize();
   if (poolSize <= 1) return getTestAccount();

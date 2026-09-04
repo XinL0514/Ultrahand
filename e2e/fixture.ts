@@ -23,9 +23,9 @@ async function finalizeEndClassRecord(
     contentType: 'application/json',
   });
 
-  // Also surface it in the midscene AI-action report (the "Execution" panel
-  // shown by @midscene/web/playwright-reporter) — testInfo.attach alone only
-  // shows up in Playwright's own HTML report, not midscene's report.
+  // 同时将其写入 Midscene 的 AI 操作报告（由
+  // @midscene/web/playwright-reporter 展示的“Execution”面板）；仅使用
+  // testInfo.attach 时，记录只会出现在 Playwright 自己的 HTML 报告中。
   try {
     await recordToReport('endClassGuard 下课兜底调用', {
       content: JSON.stringify(record, null, 2),
@@ -38,24 +38,23 @@ async function finalizeEndClassRecord(
 export const test = base.extend<PlayWrightAiFixtureType & EndClassFixtures>({
   ...PlaywrightAiFixture({
     waitForNetworkIdleTimeout: 2000,
-    // Reuse cached element locations / aiAct plans when the page hasn't changed,
-    // to avoid an AI round-trip on every step. Auto-invalidates if the UI drifts.
+    // 页面未变化时复用缓存的元素位置和 aiAct 计划，避免每一步都进行 AI 往返调用。
+    // 界面发生变化时会自动使缓存失效。
     cache: true,
   }),
 
-  // Pin each worker to a stable account slot for its whole lifetime, so
-  // concurrent workers never share a login/classroom session. parallelIndex
-  // is stable per worker process, and workers count is capped at the account
-  // pool size (see playwright.config.ts), so this never wraps into collision.
+  // 在每个工作进程的整个生命周期内将其固定到一个稳定的账号槽位，避免并发
+  // 工作进程共用登录或课堂会话。每个工作进程的 parallelIndex 是稳定的，且
+  // 工作进程数量受账号池大小限制（参见 playwright.config.ts），因此不会循环映射
+  // 到同一个槽位而发生冲突。
   storageState: async ({}, use, testInfo) => {
     const slot = testInfo.parallelIndex % getTestAccountPoolSize();
     await use(`./e2e/.auth/user-${slot}.json`);
   },
 
-  // Safety net: tests end class via a UI click on 下课, which can fail
-  // silently (AI mis-click, timeout, test aborting early). This captures the
-  // roomKey off the wire and force-ends the class through the API too, so a
-  // flaky UI step doesn't leave a room stuck in "in class".
+  // 安全兜底：测试会通过界面点击“下课”结束课堂，但该操作可能静默失败
+  // （AI 误点击、超时或测试提前中止）。这里从网络请求中捕获 roomKey，并额外通过
+  // API 强制结束课堂，避免不稳定的界面步骤让房间一直停留在“上课中”。
   endClassGuard: [
     async ({ page, recordToReport }, use, testInfo) => {
       let roomKey: string | undefined;
@@ -112,8 +111,7 @@ export const test = base.extend<PlayWrightAiFixtureType & EndClassFixtures>({
 
       await finalizeEndClassRecord(testInfo, recordToReport, record);
     },
-    // Not auto: only tests that destructure `endClassGuard` in their test
-    // callback params opt into this cleanup.
+    // 不自动启用：只有在测试回调参数中解构 `endClassGuard` 的用例才会使用此清理逻辑。
     { auto: false },
   ],
 });

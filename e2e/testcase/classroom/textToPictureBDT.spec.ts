@@ -7,10 +7,10 @@ test.beforeEach(async ({ page }) => {
   test.setTimeout(360_000);
 });
 
-test('可以文生图', { tag: '@smoke' }, async ({ aiAct, aiTap, aiInput, aiWaitFor, aiAssert, endClassGuard }) => {
+test('可以文生图', { tag: '@smoke' }, async ({ page, aiAct, aiTap, aiInput, aiWaitFor, aiAssert, endClassGuard }) => {
   const textToImageCondition = `右侧对话流中刚刚发送的“/文生图 ${textToImageScenario.prompt}”已经完成：对应的最终图片已经真实渲染出来并且清晰可见，不再显示排队、生成中、加载中、空白图片或进度百分比；不要根据左侧已有图片判断完成`;
   await runClassroomGenerationFlow(
-    { aiAct, aiTap, aiInput, aiWaitFor, aiAssert },
+    { page, aiAct, aiTap, aiInput, aiWaitFor, aiAssert },
     [
       {
         optionLabel: '文生图',

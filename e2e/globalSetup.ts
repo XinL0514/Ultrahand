@@ -27,9 +27,8 @@ export default async function globalSetup() {
 
     const agent = new PlaywrightAgent(page);
 
-    // The initial state here is the "not logged in" placeholder (with a
-    // "立即登录" button), not the phone/password form itself — that only
-    // appears after tapping the button, which aiAct below handles.
+    // 此处的初始状态是带有“立即登录”按钮的“未登录”占位页面，而非账号密码表单；
+    // 点击按钮后才会出现表单，后续由 aiAct 完成该操作。
     await agent.aiWaitFor('页面上出现了"未登录"提示和"立即登录"按钮', {
       timeoutMs: 15000,
     });

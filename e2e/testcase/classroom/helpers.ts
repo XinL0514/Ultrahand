@@ -1,26 +1,29 @@
+import type { Page } from '@playwright/test';
 import type { PlayWrightAiFixtureType } from '@midscene/web/playwright';
 
 type ClassroomFixtures = Pick<PlayWrightAiFixtureType, 'aiTap' | 'aiWaitFor' | 'aiAct'>;
 type ClassroomGenerationFixtures = Pick<
   PlayWrightAiFixtureType,
   'aiAct' | 'aiTap' | 'aiInput' | 'aiWaitFor' | 'aiAssert'
->;
+> & { page: Page };
 
 const DEFAULT_GENERATION_TIMEOUT_MS = 180_000;
 const DEFAULT_GENERATION_CHECK_INTERVAL_MS = 3_000;
 
-/** One business generation step in a classroom AI-panel workflow. */
+/** 课堂 AI 面板工作流中的一个业务生成步骤。 */
 export interface ClassroomGenerationStep {
-  /** The exact label shown in the AI-function menu, e.g. 文生图 or 图生视频. */
+  /** AI 功能菜单中显示的精确标签，例如“文生图”或“图生视频”。 */
   optionLabel: string;
   prompt: string;
-  /** Description used to wait for the newly sent command's result to settle. */
+  /** 用于等待刚发送命令的结果稳定下来的描述。 */
   completionText: string;
-  /** Optional business-specific assertion executed after the completion assertion. */
+  /** 可选的业务专属断言，在完成状态断言后执行。 */
   assertText?: string;
   timeoutMs?: number;
   checkIntervalMs?: number;
-  /** Quote the image produced by the preceding step before selecting this option. */
+  /** 选择此选项前，先引用上一步生成的内容。 */
+  quotePreviousContent?: boolean;
+  /** @deprecated 请使用 quotePreviousContent；保留此字段以兼容已有的图像生成用例。 */
   quotePreviousImage?: boolean;
 }
 
@@ -56,22 +59,38 @@ export async function enterFirstClassroom({ aiTap, aiWaitFor }: ClassroomFixture
 
 /** 打开教室右上角的"更多"AI功能弹窗，并点击其中一个选项（如 文生图/图生图/文生音乐）。 */
 export async function openAiPanelOption(
-  { aiAct, aiTap, aiWaitFor }: Pick<ClassroomFixtures, 'aiAct' | 'aiTap' | 'aiWaitFor'>,
+  { page, aiTap }: Pick<ClassroomFixtures, 'aiTap'> & { page: Page },
   optionLabel: string,
 ) {
   await aiTap('点击 更多');
-  // 弹窗里存在文案相近的选项（如"文生3D" vs "AI艺术3D模型"、"图生图" vs "文生图"），必须要求文字完全匹配。
-  // 点击后不要求模型在同一次 aiAct 里自证成功：面板点击后没有明显的高亮反馈，
-  // 之前让模型自己验证会导致它误判"没点中"，转而重新点"更多"、盲目滚动来"自救"，
-  // 反而打乱已经点对的状态，最终整个任务超出重试预算而失败。
-  // 现在把"点击"和"验证"拆成两步：点完就结束，交给下面独立的 aiWaitFor 检查输入框前缀。
-  await aiAct(
-    `点击AI功能弹窗里选项文字完全等于"${optionLabel}"（不多不少这几个字）的那一项，注意和相近文案区分（比如字序相反的"图生图"/"文生图"、或额外带修饰词的"AI艺术3D模型"之类，都不是目标）。如果当前一屏没看到目标，才需要上下滚动弹窗查找。点击一次后立刻结束这个任务，不需要在本次任务里反复验证是否点中、也不要重新点击"更多"或再次滚动去重复确认，后续会有单独的检查步骤`,
-    { cacheable: false },
+  // 选项是密集排列的小图标按钮，视觉模型即使在计划中正确读出了文字，也可能把点击坐标落在相邻项
+  // （例如把“照片修复”点成“绘本创作”）。这里改用 AI 聊天 iframe 内的精确文本定位；click 会自动滚动
+  // 到不可见的选项，但不会猜测相邻按钮。
+  const chatFrame = page.frames().find((frame) => frame.url().includes('/chat/ai-chat'));
+  if (!chatFrame) {
+    throw new Error('AI 功能弹窗已打开，但未找到聊天 iframe');
+  }
+  const option = chatFrame.getByText(optionLabel, { exact: true });
+  await option.waitFor({ state: 'visible', timeout: 10_000 });
+  await option.click();
+
+  // 同样通过 DOM 验证输入框值，避免视觉模型把“/绘本创作”误读成“/照片修复”。
+  const commandPrefix = `/${optionLabel}`;
+  await chatFrame.waitForFunction(
+    (prefix) => {
+      const valueStartsWithPrefix = Array.from(document.querySelectorAll('input, textarea')).some(
+        (element) =>
+          (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) &&
+          element.value.trimStart().startsWith(prefix),
+      );
+      const editableStartsWithPrefix = Array.from(document.querySelectorAll<HTMLElement>('[contenteditable]')).some(
+        (element) => element.isContentEditable && element.innerText.trimStart().startsWith(prefix),
+      );
+      return valueStartsWithPrefix || editableStartsWithPrefix;
+    },
+    commandPrefix,
+    { timeout: 8_000 },
   );
-  await aiWaitFor(`聊天输入框里已经出现"/${optionLabel}"这个前缀文字，说明刚才选中的AI功能选项生效了`, {
-    timeoutMs: 8000,
-  });
 }
 
 /** 点击左上角"下课"按钮结束教室会话。UI 断言仍然要走这一步，endClassGuard 只是兜底，不是替代。 */
@@ -80,13 +99,11 @@ export async function exitClassroom({ aiTap }: Pick<ClassroomFixtures, 'aiTap'>)
 }
 
 /**
- * Runs a complete in-classroom generation workflow.
+ * 执行完整的课堂内生成工作流。
  *
- * It centralizes the otherwise repeated menu selection, message submission,
- * stable completion check, per-step timeout defaults, and UI cleanup. Specs
- * keep their prompts and semantic assertions beside the business case.
- * `endClassGuard` remains the API-level fallback and must still be opted into
- * by destructuring it from the test fixture.
+ * 该函数集中处理原本会重复出现的菜单选择、消息发送、稳定完成检查、每个步骤的
+ * 默认超时时间和界面清理。各测试用例仍在业务场景旁维护各自的提示词和语义断言。
+ * `endClassGuard` 仍是 API 层面的兜底机制，测试用例仍须从测试夹具中解构它以启用该机制。
  */
 export async function runClassroomGenerationFlow(
   fixtures: ClassroomGenerationFixtures,
@@ -96,43 +113,40 @@ export async function runClassroomGenerationFlow(
     throw new Error('runClassroomGenerationFlow 至少需要一个生成步骤');
   }
 
-  const { aiAct, aiTap, aiInput, aiWaitFor, aiAssert } = fixtures;
+  const { page, aiAct, aiTap, aiInput, aiWaitFor } = fixtures;
   await enterFirstClassroom({ aiAct, aiTap, aiWaitFor });
 
   let workflowError: unknown;
   try {
     for (const step of steps) {
-      if (step.quotePreviousImage) {
+      if (step.quotePreviousContent || step.quotePreviousImage) {
         await aiTap('点击生成图片下方的 一对蓝色双引号 按钮');
       }
 
-      await openAiPanelOption({ aiAct, aiTap, aiWaitFor }, step.optionLabel);
+      await openAiPanelOption({ page, aiTap }, step.optionLabel);
       await aiInput(step.prompt, '聊天输入框', { mode: 'append' });
       await aiTap('输入框右侧的纸飞机发送按钮');
       await waitForStableThenAssert(
-        { aiWaitFor, aiAssert },
+        { aiWaitFor },
         step.completionText,
-        step.completionText,
+        step.assertText ?? step.completionText,
         {
           timeoutMs: step.timeoutMs ?? DEFAULT_GENERATION_TIMEOUT_MS,
           checkIntervalMs: step.checkIntervalMs ?? DEFAULT_GENERATION_CHECK_INTERVAL_MS,
         },
       );
-      if (step.assertText && step.assertText !== step.completionText) {
-        await aiAssert(step.assertText);
-      }
     }
   } catch (err) {
     workflowError = err;
     throw err;
   } finally {
-    // Keep exercising the UI-level "下课" path even if generation/assertion
-    // fails. The opt-in endClassGuard fixture provides the API fallback.
+    // 即使生成或断言失败，仍要执行界面层面的“下课”流程。
+    // 按需启用的 endClassGuard 测试夹具会提供 API 兜底。
     try {
       await exitClassroom({ aiTap });
     } catch (cleanupError) {
-      // A failed cleanup must not hide the original generation/assertion error.
-      // endClassGuard will still run after the test and records its API cleanup.
+      // 清理失败不得掩盖原始的生成或断言错误。
+      // 测试结束后 endClassGuard 仍会执行，并记录其 API 清理结果。
       if (workflowError) {
         console.warn('课堂 UI 下课失败，保留原始工作流错误:', cleanupError);
       } else {
@@ -143,18 +157,18 @@ export async function runClassroomGenerationFlow(
 }
 
 type WaitForOptions = Parameters<PlayWrightAiFixtureType['aiWaitFor']>[1];
-type AssertFixtures = Pick<PlayWrightAiFixtureType, 'aiWaitFor' | 'aiAssert'>;
+type AssertFixtures = Pick<PlayWrightAiFixtureType, 'aiWaitFor'>;
 
 /**
  * aiWaitFor 判定"已完成"后，同一次生成任务的 UI 有时会在下一帧再抖动一下（消息刚回来、图片还没稳定渲染，
- * 甚至可能是把上一轮历史图误判成本轮结果的瞬时假阳性），紧跟着的 aiAssert 独立截图判断就可能命中这个瞬时态而误判失败。
- * 这里在 assert 前用同样的条件短暂 settle 后再复检一次。
+ * 甚至可能是把上一轮历史图误判成本轮结果的瞬时假阳性）。这里短暂 settle 后再用同一类 waitFor 复检，
+ * 不再调用独立的 aiAssert：后者对同一画面可能得出与刚通过的 waitFor 相反的结论，造成假失败。
  * 复检失败不代表任务真的失败——它只说明第一次判定命中的是假阳性，真实生成可能才刚开始（比如 0%/15% 进度），
- * 所以复检失败时要回去用原本的总预算重新完整等待，而不是让复检自己的短超时直接判定整条用例失败；
- * 只有总预算耗尽了，才交给最后的 aiAssert 自然报错。
+ * 所以复检失败时要回去用原本的总预算重新完整等待，而不是让复检自己的短超时直接判定整条用例失败。
+ * 如果调用方提供了不同的业务断言，最后也用 aiWaitFor 进行验证。
  */
 export async function waitForStableThenAssert(
-  { aiWaitFor, aiAssert }: AssertFixtures,
+  { aiWaitFor }: AssertFixtures,
   waitText: string,
   assertText: string,
   options: WaitForOptions & { settleMs?: number } = {},
@@ -173,7 +187,7 @@ export async function waitForStableThenAssert(
     await new Promise((resolve) => setTimeout(resolve, settleMs));
 
     const remainingAfterSettle = deadline - Date.now();
-    if (remainingAfterSettle <= 0) break; // 总预算已耗尽，交给下面的 aiAssert 做最终判定
+    if (remainingAfterSettle <= 0) return;
 
     try {
       const confirmTimeoutMs = Math.min(remainingAfterSettle, 15_000);
@@ -184,5 +198,15 @@ export async function waitForStableThenAssert(
     }
   }
 
-  await aiAssert(assertText);
+  if (assertText === waitText) return;
+
+  const remainingForAssert = deadline - Date.now();
+  if (remainingForAssert <= 0) {
+    throw new Error('生成结果已稳定，但在总超时内未完成业务断言验证');
+  }
+  await aiWaitFor(assertText, {
+    ...waitOptions,
+    timeoutMs: remainingForAssert,
+    checkIntervalMs: safeInterval(remainingForAssert),
+  });
 }

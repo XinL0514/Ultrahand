@@ -21,8 +21,12 @@ AI 驱动的 Web UI 自动化测试框架,基于 [Midscene.js](https://midscenej
     │   ├── environments.ts      # getEnvironment(): 读取 appBaseURL / classroomApiBaseURL
     │   ├── accounts.ts          # getTestAccount(role?): 读取测试账号密码,支持多个命名角色;
     │   │                        # getTestAccountPoolSize() / getTestAccountForSlot(slot): 并发账号池
+    │   ├── files.ts             # getTestFile(): 解析并校验仓库内上传测试文件
+    │   ├── files/               # 上传测试文件库（图片/视频/音频/文档）
     │   └── scenarios/
     │       └── classroom.ts    # 教室内 AI 面板用例数据,如文生图/图生图/文生音乐的 prompt
+    ├── helpers/
+    │   └── fileUpload.ts       # 本地文件上传封装（file input / file chooser）
     └── testcase/
         ├── basic/
         │   └── login.spec.ts            # 登录用例
@@ -113,6 +117,24 @@ test('用例名', { tag: '@smoke' }, async ({ page, aiAct, aiAssert }) => {
 ```
 
 当前冒烟集:`basic/login.spec.ts`(登录)、`classroom/courses.spec.ts`(课程列表)、`classroom/textToPictureBDT.spec.ts`(文生图)。
+
+### 上传本地测试文件
+
+需要上传图片、视频、音频或文档的场景，将素材放到 `e2e/testdata/files/` 的对应子目录中；该目录会随仓库管理，任何测试环境都使用相同的文件。具体分类、素材约束和示例见 [`e2e/testdata/files/README.md`](e2e/testdata/files/README.md)。
+
+对于有稳定 `<input type="file">` 的页面，使用 `uploadTestFilesToInput`；对于只能通过 AI 点击“上传”入口的页面，使用 `uploadTestFilesByChooser`：
+
+```ts
+import { uploadTestFilesByChooser } from '@e2e/helpers/fileUpload';
+
+test('可以上传本地图片', async ({ page, aiTap }) => {
+  await uploadTestFilesByChooser(page, 'images/source.png', () =>
+    aiTap('点击图片上传按钮'),
+  );
+});
+```
+
+传入的路径始终相对于 `e2e/testdata/files/`；上传前会校验文件存在且不允许访问目录外的本地文件。多个文件可传数组，例如 `['images/first.png', 'images/second.png']`。
 
 ### 教室内 AI 面板用例的写法
 
