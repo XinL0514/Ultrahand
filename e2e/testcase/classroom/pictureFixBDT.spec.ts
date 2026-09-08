@@ -1,6 +1,11 @@
 import { test } from '@e2e/fixture';
 import { pictureFixScenario } from '@e2e/testdata/scenarios/classroom';
-import { enterFirstClassroom, openAiPanelOption, waitForStableThenAssert, } from './helpers';
+import {
+  enterFirstClassroom,
+  openAiPanelOption,
+  waitForChatAttachmentControls,
+  waitForStableThenAssert,
+} from './helpers';
 import { uploadTestFilesByChooser } from '@e2e/helpers/fileUpload';
 
 test.beforeEach(async ({ page }) => {
@@ -8,9 +13,10 @@ test.beforeEach(async ({ page }) => {
   test.setTimeout(360_000);
 });
 
-test('可以照片修复', { tag: '@smoke' }, async ({ page, aiAct, aiTap, aiInput, aiWaitFor, endClassGuard, aiRightClick, aiAssert }) => {
-  await enterFirstClassroom({ aiTap, aiWaitFor, aiAct });
-  await aiTap('点击输入框右侧的 + 按钮')
+test('可以照片修复', { tag: '@smoke' }, async ({ page, aiTap, aiInput, aiWaitFor, endClassGuard, aiRightClick, aiAssert }) => {
+  await enterFirstClassroom({ page, aiTap, aiWaitFor });
+  await waitForChatAttachmentControls({ aiWaitFor });
+  await aiTap('点击聊天输入框右侧的 + 图片附件上传按钮', { cacheable: false });
   await uploadTestFilesByChooser(page, 'images/pictureFix.webp', () =>
     aiTap('点击 照片图库'),
   );
@@ -22,7 +28,7 @@ test('可以照片修复', { tag: '@smoke' }, async ({ page, aiAct, aiTap, aiInp
 //   const pictureFixassertText = `对应的最终图片已经真实渲染出来并且清晰可见，照片风格变为带有色彩且清晰不再是黑白且观感较新，不再显示排队、生成中、加载中、空白图片或进度百分比；不要根据左侧已有图片判断完成`;
   await aiRightClick('右键对话流中的这个黑白图片')
   await aiTap('点击图片操作菜单中的“引用”选项');
-  await openAiPanelOption({ page, aiTap }, '照片修复');
+  await openAiPanelOption({ page }, '照片修复');
   await aiInput(pictureFixScenario.prompt, '聊天输入框', { mode: 'append' });
   // ...选择“照片修复”、输入 prompt 后
   const command = `/照片修复 ${pictureFixScenario.prompt}`;

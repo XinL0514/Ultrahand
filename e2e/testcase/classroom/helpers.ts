@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import type { PlayWrightAiFixtureType } from '@midscene/web/playwright';
 
-type ClassroomFixtures = Pick<PlayWrightAiFixtureType, 'aiTap' | 'aiWaitFor' | 'aiAct'>;
+type ClassroomFixtures = Pick<PlayWrightAiFixtureType, 'aiTap' | 'aiWaitFor'> & { page: Page };
 type ClassroomGenerationFixtures = Pick<
   PlayWrightAiFixtureType,
   'aiAct' | 'aiTap' | 'aiInput' | 'aiWaitFor' | 'aiAssert'
@@ -31,7 +31,7 @@ export interface ClassroomGenerationStep {
  * 点击"开始上课"、选第一个课件、自动生成房间号并进入教室，等到教室页面渲染完成。
  * classroom/*BDT.spec.ts 用例开头都是这一整段，抽出来避免话术漂移。
  */
-export async function enterFirstClassroom({ aiTap, aiWaitFor }: ClassroomFixtures) {
+export async function enterFirstClassroom({ page, aiTap, aiWaitFor }: ClassroomFixtures) {
   await aiTap('点击带有 开始上课文本的 按钮');
   await aiWaitFor(
     '课件选择页面已经加载完成，课件分类以及课件封面已经渲染出来，不再显示空白或加载中的转圈图标',
@@ -50,47 +50,88 @@ export async function enterFirstClassroom({ aiTap, aiWaitFor }: ClassroomFixture
     { timeoutMs: 30000 },
   );
   await aiTap('点击 立即进入');
+  // 这里此前依赖视觉模型辨识整个右侧面板。加载完成后，浅紫色面板的视觉效果偶尔
+  // 会被误判成 loading spinner；实际 DOM 已有固定的聊天入口。改用两个稳定的入口
+  // 校验，既避免误判，也确保下游操作使用的聊天 iframe 真的就绪。
+  await waitForChatPanelReady(page, 60_000);
+}
 
+const CHAT_FRAME_URL_FRAGMENT = '/chat/ai-chat';
+
+/** 等待课堂右侧聊天 iframe 出现并完成首屏渲染。 */
+async function getChatFrame(page: Page, timeoutMs = 15_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const chatFrame = page.frames().find((frame) => frame.url().includes(CHAT_FRAME_URL_FRAGMENT));
+    if (chatFrame) return chatFrame;
+    await page.waitForTimeout(250);
+  }
+  throw new Error(`未在 ${timeoutMs}ms 内找到课堂聊天 iframe`);
+}
+
+async function waitForChatPanelReady(page: Page, timeoutMs: number) {
+  const deadline = Date.now() + timeoutMs;
+  const chatFrame = await getChatFrame(page, timeoutMs);
+  const remaining = () => Math.max(deadline - Date.now(), 1_000);
+
+  await chatFrame.getByText('新建对话', { exact: true }).waitFor({
+    state: 'visible',
+    timeout: remaining(),
+  });
+  await chatFrame.getByText('课堂文件', { exact: true }).waitFor({
+    state: 'visible',
+    timeout: remaining(),
+  });
+  // 聊天工具栏比顶部导航晚一拍渲染；“更多”是 AI 工具菜单的稳定入口。
+  await chatFrame.getByText('更多', { exact: true }).waitFor({
+    state: 'visible',
+    timeout: remaining(),
+  });
+  return chatFrame;
+}
+
+/**
+ * 等待聊天输入框右侧的附件工具完成渲染。
+ *
+ * “更多”只用于切换 AI 工具；照片修复上传必须使用输入框右侧的“+”。这组控件
+ * 比聊天 iframe 的导航和快捷工具栏晚加载，不能仅凭“新建对话”已出现就开始点击。
+ */
+export async function waitForChatAttachmentControls({
+  aiWaitFor,
+}: Pick<ClassroomFixtures, 'aiWaitFor'>) {
   await aiWaitFor(
-    '教室页面已经加载完成，右侧对话流IM/工具区域已经渲染出来，不再显示空白页面或加载中的转圈图标, 不显示欢迎使用神笔马良, 房间里的课件图片以及右侧对话流IM中的新建对话, 课堂文件等入口渲染完成, 右侧对话流IM不能处于空白页面 IM里要显示出来 新建对话, 课堂文件 以及显示出来输入框才能判定为页面加载完毕',
-    { timeoutMs: 30000 },
+    '右侧聊天输入框已经完整渲染：输入框右侧清晰可见并可点击语音输入图标、+ 图片附件上传按钮和纸飞机发送按钮；不要把输入框上方用于切换 AI 工具的“更多”按钮当成附件上传入口',
+    { timeoutMs: 60_000, checkIntervalMs: 3_000 },
   );
 }
 
-/** 打开教室右上角的"更多"AI功能弹窗，并点击其中一个选项（如 文生图/图生图/文生音乐）。 */
-export async function openAiPanelOption(
-  { page, aiTap }: Pick<ClassroomFixtures, 'aiTap'> & { page: Page },
-  optionLabel: string,
-) {
-  await aiTap('点击 更多');
-  // 选项是密集排列的小图标按钮，视觉模型即使在计划中正确读出了文字，也可能把点击坐标落在相邻项
-  // （例如把“照片修复”点成“绘本创作”）。这里改用 AI 聊天 iframe 内的精确文本定位；click 会自动滚动
-  // 到不可见的选项，但不会猜测相邻按钮。
-  const chatFrame = page.frames().find((frame) => frame.url().includes('/chat/ai-chat'));
-  if (!chatFrame) {
-    throw new Error('AI 功能弹窗已打开，但未找到聊天 iframe');
-  }
-  const option = chatFrame.getByText(optionLabel, { exact: true });
-  await option.waitFor({ state: 'visible', timeout: 10_000 });
-  await option.click();
+/**
+ * 打开聊天工具栏的“更多”菜单并点击其中的精确菜单项。
+ *
+ * 这里不走视觉定位：`更多` 是 iframe 内有稳定文案的唯一入口，且菜单里的小图标很密集，
+ * 让视觉模型点击容易落到相邻项。
+ */
+async function openChatMoreMenuItem(page: Page, optionLabel: string) {
+  const chatFrame = await getChatFrame(page);
+  const moreButton = chatFrame.getByText('更多', { exact: true });
+  await moreButton.waitFor({ state: 'visible', timeout: 10_000 });
+  await moreButton.click({ timeout: 10_000 });
 
-  // 同样通过 DOM 验证输入框值，避免视觉模型把“/绘本创作”误读成“/照片修复”。
-  const commandPrefix = `/${optionLabel}`;
-  await chatFrame.waitForFunction(
-    (prefix) => {
-      const valueStartsWithPrefix = Array.from(document.querySelectorAll('input, textarea')).some(
-        (element) =>
-          (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) &&
-          element.value.trimStart().startsWith(prefix),
-      );
-      const editableStartsWithPrefix = Array.from(document.querySelectorAll<HTMLElement>('[contenteditable]')).some(
-        (element) => element.isContentEditable && element.innerText.trimStart().startsWith(prefix),
-      );
-      return valueStartsWithPrefix || editableStartsWithPrefix;
-    },
-    commandPrefix,
-    { timeout: 8_000 },
-  );
+  // 聊天 iframe 中存在两套同名文案：底层的 ai-tool-item-text 会被快捷工具浮层
+  // 遮住，而浮层内的 item-text 才是用户实际可点击的菜单项。
+  const escapedLabel = optionLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const option = chatFrame.locator('.item-text').filter({ hasText: new RegExp(`^\\s*${escapedLabel}\\s*$`) });
+  await option.waitFor({ state: 'visible', timeout: 10_000 });
+  await option.click({ timeout: 10_000 });
+}
+
+/** 打开教室右下角的“更多”AI 功能菜单，并点击其中一个选项（如 文生图/图生图/文生音乐）。 */
+export async function openAiPanelOption({ page }: { page: Page }, optionLabel: string) {
+  await openChatMoreMenuItem(page, optionLabel);
+  // 功能项会异步初始化 TinyMCE 编辑器；其内容在嵌套 iframe 内，而不是当前聊天
+  // frame 的 input/textarea。不能在这里校验“/功能名”前缀，否则会在编辑器已打开
+  // 但尚未被当前 frame 读取到时假超时，并触发 finally 中的下课。下一步 aiInput
+  // 会直接以“聊天输入框”为目标操作编辑器。
 }
 
 /** 点击左上角"下课"按钮结束教室会话。UI 断言仍然要走这一步，endClassGuard 只是兜底，不是替代。 */
@@ -114,7 +155,7 @@ export async function runClassroomGenerationFlow(
   }
 
   const { page, aiAct, aiTap, aiInput, aiWaitFor } = fixtures;
-  await enterFirstClassroom({ aiAct, aiTap, aiWaitFor });
+  await enterFirstClassroom({ page, aiTap, aiWaitFor });
 
   let workflowError: unknown;
   try {
@@ -123,7 +164,7 @@ export async function runClassroomGenerationFlow(
         await aiTap('点击生成图片下方的 一对蓝色双引号 按钮');
       }
 
-      await openAiPanelOption({ page, aiTap }, step.optionLabel);
+      await openAiPanelOption({ page }, step.optionLabel);
       await aiInput(step.prompt, '聊天输入框', { mode: 'append' });
       await aiTap('输入框右侧的纸飞机发送按钮');
       await waitForStableThenAssert(

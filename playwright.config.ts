@@ -27,13 +27,11 @@ export default defineConfig({
     {
       name: 'chromium',
       use: {
-        // 不固定为 Desktop Chrome 的默认 1280×720 视口；有头模式下随最大化窗口布局。
-        // 必须保留 Chrome 的原生设备缩放：--force-device-scale-factor 会导致 macOS 有头窗口白屏，
-        // 即使 Playwright/Midscene 截图缓冲仍能抓到页面内容。
-        viewport: null,
-        launchOptions: {
-          args: ['--start-maximized'],
-        },
+        // `viewport: null` 在无头 Chromium 中会退回到 800×600（4:3）。课程详情
+        // 弹窗中的“启动课件，开始上课”按钮会因此落在 Midscene 截图之外，造成视觉
+        // waitFor 假超时。固定为登录流程也使用的标准桌面尺寸，保证有头和无头模式
+        // 得到相同的 CSS 视口；不设置 --force-device-scale-factor，仍使用 Chrome 原生缩放。
+        viewport: { width: 1280, height: 800 },
       },
     },
   ],

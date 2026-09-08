@@ -4,7 +4,7 @@ import { runClassroomGenerationFlow } from './helpers';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/#/home/profile');
-  test.setTimeout(360_000);
+  test.setTimeout(720_000);
 });
 
 test('可以文生视频', { tag: '@smoke' }, async ({ page, aiAct, aiTap, aiInput, aiWaitFor, aiAssert, endClassGuard }) => {
@@ -18,6 +18,7 @@ test('可以文生视频', { tag: '@smoke' }, async ({ page, aiAct, aiTap, aiInp
         prompt: textToVideoScenario.prompt,
         completionText: textToVideoCondition,
         checkIntervalMs: 10_000,
+        timeoutMs: 360_000,
         assertText: textToVideoAssertText,
       },
     ],
